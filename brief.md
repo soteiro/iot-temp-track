@@ -1,8 +1,8 @@
-# Project Brief: Sistema de Monitoreo IoT End-to-End (v3)
+# Project Brief: Sistema de Monitoreo IoT End-to-End (v3) 
 
-**Autor:** [Tu Nombre Completo]  
+**Autor:** Diego Ignacio Soto
 **Fecha:** 10 de septiembre de 2025  
-**Propósito:** Prototipo funcional para demostrar las habilidades y proactividad requeridas para el puesto de Alumno/a en Práctica en [Nombre de la Empresa, si lo sabes].
+**Propósito:** Prototipo funcional para demostrar las habilidades y proactividad requeridas para el puesto de Alumno/a en Práctica.
 
 ## 1. Resumen Ejecutivo
 

@@ -135,3 +135,7 @@ Thumbs.db
 *.ino.hex
 *.ino.elf
 *.ino.with_bootloader.hex
+
+firmware/.vscode
+firmware/include/config.h
+
