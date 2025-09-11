@@ -64,12 +64,12 @@ El flujo de datos seguirá los siguientes pasos:
 
 1. **Fase 1: Hardware y Conectividad (Publisher)**
 
-   - [ ] Conectar y programar el ESP32 para leer y publicar datos vía MQTT.
+   - [x] Conectar y programar el ESP32 para leer y publicar datos vía MQTT.
+     (conectado al broker publico EMQX).
 
 2. **Fase 2: Backend y Base de Datos (Subscriber & Storage)**
 
    - [ ] Configurar la base de datos en Neon DB.
-
    - [ ] Desarrollar el servicio en Hono para suscribirse a MQTT e insertar los datos.
 
 3. **Fase 3: API y Frontend (Visualization)**
