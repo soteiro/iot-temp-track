@@ -1,4 +1,4 @@
-# Project Brief: Sistema de Monitoreo IoT End-to-End (v3) 
+# Project Brief: Sistema de Monitoreo IoT End-to-End (v3)
 
 **Autor:** Diego Ignacio Soto
 **Fecha:** 10 de septiembre de 2025  
