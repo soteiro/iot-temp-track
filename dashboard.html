@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🌡️ IoT Temperature Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            backdrop-filter: blur(10px);
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #667eea;
+        }
+        
+        .header h1 {
+            color: #667eea;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        .status {
+            display: inline-block;
+            padding: 8px 16px;
+            border-radius: 25px;
+            font-weight: bold;
+            margin: 10px;
+        }
+        
+        .status.connected {
+            background: #d4edda;
+            color: #155724;
+            border: 2px solid #c3e6cb;
+        }
+        
+        .status.disconnected {
+            background: #f8d7da;
+            color: #721c24;
+            border: 2px solid #f5c6cb;
+        }
+        
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 25px;
+            margin-bottom: 40px;
+        }
+        
+        .metric-card {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            border-left: 5px solid #667eea;
+            transition: transform 0.3s ease;
+        }
+        
+        .metric-card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .metric-card.temperature {
+            border-left-color: #ff6b6b;
+        }
+        
+        .metric-card.humidity {
+            border-left-color: #4ecdc4;
+        }
+        
+        .metric-card.wifi {
+            border-left-color: #45b7d1;
+        }
+        
+        .metric-value {
+            font-size: 3em;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        
+        .metric-value.temperature {
+            color: #ff6b6b;
+        }
+        
+        .metric-value.humidity {
+            color: #4ecdc4;
+        }
+        
+        .metric-value.wifi {
+            color: #45b7d1;
+        }
+        
+        .metric-label {
+            font-size: 1.2em;
+            color: #666;
+            margin-bottom: 10px;
+        }
+        
+        .metric-unit {
+            font-size: 0.8em;
+            color: #999;
+        }
+        
+        .data-log {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 25px;
+            margin-top: 30px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .data-log h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 1.5em;
+        }
+        
+        .log-entry {
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-left: 4px solid #667eea;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+        
+        .controls {
+            margin: 20px 0;
+            text-align: center;
+        }
+        
+        .btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 25px;
+            cursor: pointer;
+            margin: 0 10px;
+            font-size: 1em;
+            transition: background 0.3s ease;
+        }
+        
+        .btn:hover {
+            background: #5a67d8;
+        }
+        
+        .btn.disconnect {
+            background: #e53e3e;
+        }
+        
+        .btn.disconnect:hover {
+            background: #c53030;
+        }
+        
+        .timestamp {
+            color: #666;
+            font-size: 0.8em;
+            margin-top: 10px;
+        }
+        
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+        
+        .metric-card.updated {
+            animation: pulse 0.5s ease-in-out;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🌡️ IoT Temperature Tracker</h1>
+            <div id="connectionStatus" class="status disconnected">
+                ❌ Desconectado
+            </div>
+            <div class="timestamp" id="lastUpdate">
+                Última actualización: --
+            </div>
+        </div>
+        
+        <div class="controls">
+            <button class="btn" onclick="connect()">🔗 Conectar</button>
+            <button class="btn disconnect" onclick="disconnect()">🔌 Desconectar</button>
+            <button class="btn" onclick="clearLog()">🗑️ Limpiar Log</button>
+        </div>
+        
+        <div class="metrics-grid">
+            <div class="metric-card temperature" id="tempCard">
+                <div class="metric-label">🌡️ Temperatura</div>
+                <div class="metric-value temperature" id="temperature">--</div>
+                <div class="metric-unit">°Celsius</div>
+            </div>
+            
+            <div class="metric-card humidity" id="humidityCard">
+                <div class="metric-label">💧 Humedad</div>
+                <div class="metric-value humidity" id="humidity">--</div>
+                <div class="metric-unit">% RH</div>
+            </div>
+            
+            <div class="metric-card wifi" id="wifiCard">
+                <div class="metric-label">📶 WiFi RSSI</div>
+                <div class="metric-value wifi" id="wifi">--</div>
+                <div class="metric-unit">dBm</div>
+            </div>
+        </div>
+        
+        <div class="data-log">
+            <h3>📋 Log de Datos en Tiempo Real</h3>
+            <div id="dataLog"></div>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+        let connected = false;
+        
+        const BROKER_URL = 'wss://backend.diego-sarq.workers.dev/mqtt';
+        const ESP32_ID = 'esp32-FCE8C0A1EF54'; // Tu ESP32 específico
+        
+        function log(message, isData = false) {
+            const logDiv = document.getElementById('dataLog');
+            const timestamp = new Date().toLocaleTimeString();
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            entry.innerHTML = `<strong>[${timestamp}]</strong> ${message}`;
+            
+            logDiv.insertBefore(entry, logDiv.firstChild);
+            
+            // Mantener solo las últimas 20 entradas
+            if (logDiv.children.length > 20) {
+                logDiv.removeChild(logDiv.lastChild);
+            }
+            
+            // Auto-scroll al top para ver nuevos mensajes
+            logDiv.scrollTop = 0;
+        }
+        
+        function updateStatus(isConnected) {
+            const statusDiv = document.getElementById('connectionStatus');
+            connected = isConnected;
+            
+            if (isConnected) {
+                statusDiv.className = 'status connected';
+                statusDiv.innerHTML = '✅ Conectado al broker MQTT';
+            } else {
+                statusDiv.className = 'status disconnected';
+                statusDiv.innerHTML = '❌ Desconectado';
+            }
+        }
+        
+        function updateMetric(elementId, value, cardId) {
+            const element = document.getElementById(elementId);
+            const card = document.getElementById(cardId);
+            
+            if (element && value !== undefined) {
+                element.textContent = value;
+                
+                // Animación de actualización
+                card.classList.add('updated');
+                setTimeout(() => card.classList.remove('updated'), 500);
+            }
+        }
+        
+        function updateLastUpdateTime() {
+            const lastUpdate = document.getElementById('lastUpdate');
+            lastUpdate.textContent = `Última actualización: ${new Date().toLocaleTimeString()}`;
+        }
+        
+        function connect() {
+            if (ws && connected) {
+                log('⚠️ Ya hay una conexión activa');
+                return;
+            }
+            
+            log(`🔄 Conectando a: ${BROKER_URL}`);
+            
+            try {
+                ws = new WebSocket(BROKER_URL);
+                
+                ws.onopen = function(event) {
+                    log('🔗 WebSocket conectado exitosamente');
+                    updateStatus(true);
+                    
+                    // Enviar mensaje de conexión MQTT
+                    const connectMsg = {
+                        type: 'connect',
+                        clientId: 'dashboard-' + Date.now(),
+                        keepAlive: 60,
+                        cleanSession: true
+                    };
+                    
+                    ws.send(JSON.stringify(connectMsg));
+                    log('📤 Mensaje CONNECT enviado');
+                };
+                
+                ws.onmessage = function(event) {
+                    try {
+                        const data = JSON.parse(event.data);
+                        
+                        if (data.type === 'connack') {
+                            if (data.returnCode === 0) {
+                                log(`✅ CONNACK: Conectado con clientId: ${data.clientId}`);
+                                
+                                // Suscribirse a los topics del ESP32
+                                subscribeToTopics();
+                            } else {
+                                log(`❌ CONNACK: Error código ${data.returnCode}`);
+                            }
+                        } else if (data.type === 'suback') {
+                            log(`✅ SUBACK: Suscrito a ${data.topic}`);
+                        } else if (data.type === 'message') {
+                            handleSensorData(data);
+                        }
+                    } catch (e) {
+                        log(`⚠️ Error parseando mensaje: ${e.message}`);
+                    }
+                };
+                
+                ws.onclose = function(event) {
+                    log(`🔌 WebSocket cerrado (código: ${event.code})`);
+                    updateStatus(false);
+                };
+                
+                ws.onerror = function(error) {
+                    log(`❌ Error WebSocket: ${error}`);
+                    updateStatus(false);
+                };
+                
+            } catch (error) {
+                log(`❌ Error creando WebSocket: ${error.message}`);
+            }
+        }
+        
+        function subscribeToTopics() {
+            const topics = [
+                `sensors/${ESP32_ID}`,      // Datos completos en JSON
+                `temperature/${ESP32_ID}`,  // Solo temperatura
+                `humidity/${ESP32_ID}`,     // Solo humedad
+                `status/${ESP32_ID}`,       // Estado del dispositivo
+                `alerts/${ESP32_ID}`        // Alertas
+            ];
+            
+            topics.forEach(topic => {
+                const subscribeMsg = {
+                    type: 'subscribe',
+                    topic: topic,
+                    qos: 0,
+                    messageId: Math.floor(Math.random() * 1000)
+                };
+                
+                ws.send(JSON.stringify(subscribeMsg));
+                log(`📤 SUBSCRIBE: Topic '${topic}'`);
+            });
+        }
+        
+        function handleSensorData(data) {
+            const topic = data.topic;
+            const payload = data.payload;
+            
+            log(`📨 ${topic}: ${payload}`, true);
+            updateLastUpdateTime();
+            
+            // Procesar según el topic
+            if (topic === `sensors/${ESP32_ID}`) {
+                // Datos completos en JSON
+                try {
+                    const sensorData = JSON.parse(payload);
+                    updateMetric('temperature', sensorData.temperature.toFixed(1), 'tempCard');
+                    updateMetric('humidity', sensorData.humidity.toFixed(1), 'humidityCard');
+                    updateMetric('wifi', sensorData.wifi_rssi, 'wifiCard');
+                } catch (e) {
+                    log(`⚠️ Error parseando datos del sensor: ${e.message}`);
+                }
+            } else if (topic === `temperature/${ESP32_ID}`) {
+                updateMetric('temperature', parseFloat(payload).toFixed(1), 'tempCard');
+            } else if (topic === `humidity/${ESP32_ID}`) {
+                updateMetric('humidity', parseFloat(payload).toFixed(1), 'humidityCard');
+            } else if (topic === `status/${ESP32_ID}`) {
+                log(`📡 Estado del dispositivo: ${payload}`);
+            } else if (topic === `alerts/${ESP32_ID}`) {
+                log(`🚨 ALERTA: ${payload}`);
+            }
+        }
+        
+        function disconnect() {
+            if (ws) {
+                if (connected) {
+                    const disconnectMsg = { type: 'disconnect' };
+                    ws.send(JSON.stringify(disconnectMsg));
+                }
+                
+                ws.close();
+                ws = null;
+            }
+            updateStatus(false);
+            log('🔌 Desconectando...');
+        }
+        
+        function clearLog() {
+            document.getElementById('dataLog').innerHTML = '';
+        }
+        
+        // Conectar automáticamente al cargar la página
+        window.onload = function() {
+            log('🚀 Dashboard IoT Temperature Tracker cargado');
+            log('💡 Haz clic en "Conectar" para ver datos en tiempo real');
+            
+            // Auto-conectar después de 2 segundos
+            setTimeout(() => {
+                connect();
+            }, 2000);
+        };
+        
+        // Reconexión automática si se pierde la conexión
+        setInterval(() => {
+            if (!connected && ws && ws.readyState === WebSocket.CLOSED) {
+                log('🔄 Intentando reconexión automática...');
+                connect();
+            }
+        }, 10000); // Intentar cada 10 segundos
+    </script>
+</body>
+</html>

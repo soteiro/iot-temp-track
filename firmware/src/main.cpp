@@ -60,6 +60,15 @@ void setup() {
     
     Serial.println("\n=== ESP32 IoT Temperature Tracker ===");
     Serial.println("Iniciando sistema...");
+    Serial.printf("Firmware compilado: %s %s\n", __DATE__, __TIME__);
+    
+    // Mostrar configuración desde config.h
+    Serial.println("\n📋 Configuración cargada:");
+    Serial.printf("   WiFi SSID: %s\n", ssid);
+    Serial.printf("   MQTT Host: %s\n", mqtt_broker_host);
+    Serial.printf("   MQTT Port: %d\n", mqtt_broker_port);
+    Serial.printf("   MQTT Path: %s\n", mqtt_path);
+    Serial.printf("   Protocol: %s\n", mqtt_protocol);
     
     // Inicializar sensor DHT22
     // El sensor necesita unos milisegundos para estabilizarse
@@ -128,18 +137,27 @@ void connectToWifi() {
 void setupWebSocket() {
     Serial.println("Configurando WebSocket...");
     
-    // Configurar servidor WebSocket
-    // Usar el host y puerto de tu broker Cloudflare Workers
-    webSocket.begin("backend.diego-sarq.workers.dev", 443, "/mqtt", "wss");
+    // Configurar servidor WebSocket usando configuración del config.h
+    Serial.printf("Conectando a: %s://%s:%d%s\n", 
+                  mqtt_protocol, mqtt_broker_host, mqtt_broker_port, mqtt_path);
+    
+    // Intentar conexión SSL primero
+    Serial.println("Intentando conexión SSL...");
+    webSocket.beginSSL(mqtt_broker_host, mqtt_broker_port, mqtt_path);
     
     // Configurar callback para eventos WebSocket
     webSocket.onEvent(webSocketEvent);
     
-    // Configurar opciones de conexión
+    // Configurar opciones de conexión más robustas
     webSocket.enableHeartbeat(15000, 3000, 2); // Ping cada 15s, timeout 3s, 2 reintentos
     webSocket.setReconnectInterval(5000);       // Reintentar cada 5 segundos
     
-    Serial.println("✓ WebSocket configurado");
+    // Configurar headers adicionales para Cloudflare Workers
+    String origin = String("https://") + mqtt_broker_host;
+    webSocket.setExtraHeaders(("Origin: " + origin + "\r\nUser-Agent: ESP32-IoT-Client/1.0").c_str());
+    
+    Serial.println("✓ WebSocket configurado con SSL");
+    Serial.println("⏳ Esperando conexión...");
 }
 
 // =============================================================================
@@ -150,12 +168,17 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
         // ===== DESCONEXIÓN =====
         case WStype_DISCONNECTED:
             Serial.println("🔌 WebSocket desconectado");
+            Serial.printf("   Código: %d\n", (int)type);
             isConnectedToMQTT = false;
             break;
             
         // ===== CONEXIÓN EXITOSA =====
         case WStype_CONNECTED: {
-            Serial.printf("🔗 WebSocket conectado a: %s\n", payload);
+            Serial.printf("🔗 WebSocket conectado exitosamente a: %s\n", payload);
+            Serial.println("   Estado: Listo para MQTT");
+            
+            // Dar un momento para que la conexión se estabilice
+            delay(500);
             
             // Enviar mensaje de conexión MQTT inmediatamente
             connectToMQTTBroker();
@@ -164,7 +187,7 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
         
         // ===== MENSAJE RECIBIDO =====
         case WStype_TEXT: {
-            Serial.printf("📥 Recibido: %s\n", payload);
+            Serial.printf("📥 Recibido (%d bytes): %s\n", length, payload);
             
             // Parsear mensaje JSON del broker
             StaticJsonDocument<512> doc;
@@ -172,6 +195,7 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
             
             if (error) {
                 Serial.printf("❌ Error parseando JSON: %s\n", error.c_str());
+                Serial.printf("   Datos recibidos: %s\n", payload);
                 return;
             }
             
@@ -182,11 +206,13 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
                 // Confirmación de conexión MQTT
                 int returnCode = doc["returnCode"];
                 String assignedClientId = doc["clientId"];
+                bool sessionPresent = doc["sessionPresent"]; // Campo adicional del backend
                 
                 if (returnCode == 0) {
                     isConnectedToMQTT = true;
                     clientId = assignedClientId;
                     Serial.printf("✅ Conectado a MQTT con clientId: %s\n", clientId.c_str());
+                    Serial.printf("   Session present: %s\n", sessionPresent ? "true" : "false");
                     
                     // Suscribirse a tópicos de control
                     mqttSubscribe("control/" + clientId);
@@ -201,7 +227,8 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
             } else if (messageType == "suback") {
                 // Confirmación de suscripción
                 String topic = doc["topic"];
-                Serial.printf("✓ Suscrito a: %s\n", topic.c_str());
+                int messageId = doc["messageId"]; // Campo adicional del backend
+                Serial.printf("✓ Suscrito a: %s (msgId: %d)\n", topic.c_str(), messageId);
                 
             } else if (messageType == "message") {
                 // Mensaje recibido en un tópico suscrito
@@ -234,10 +261,28 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
         // ===== ERROR =====
         case WStype_ERROR:
             Serial.printf("❌ Error WebSocket: %s\n", payload);
+            Serial.printf("   Longitud: %d bytes\n", length);
             isConnectedToMQTT = false;
             break;
             
+        // ===== FRAGMENTO =====
+        case WStype_FRAGMENT_TEXT_START:
+        case WStype_FRAGMENT_BIN_START:
+        case WStype_FRAGMENT:
+        case WStype_FRAGMENT_FIN:
+            Serial.println("📄 Fragmento de mensaje recibido");
+            break;
+            
+        // ===== PING/PONG =====
+        case WStype_PING:
+            Serial.println("🏓 Ping recibido del servidor");
+            break;
+        case WStype_PONG:
+            Serial.println("🏓 Pong recibido del servidor");
+            break;
+            
         default:
+            Serial.printf("⚠️ Evento WebSocket desconocido: %d\n", type);
             break;
     }
 }
@@ -253,6 +298,7 @@ void connectToMQTTBroker() {
     connectMsg["type"] = "connect";
     connectMsg["clientId"] = clientId;
     connectMsg["keepAlive"] = 60;
+    connectMsg["cleanSession"] = true;  // Agregar campo para compatibilidad
     
     // Serializar y enviar
     String connectStr;
@@ -486,6 +532,8 @@ void loop() {
         Serial.println("❌ WiFi desconectado, reconectando...");
         isConnectedToMQTT = false;
         connectToWifi();
+        // Después de reconectar WiFi, también reconectar WebSocket
+        setupWebSocket();
         return;
     }
     
@@ -494,8 +542,12 @@ void loop() {
         unsigned long now = millis();
         if (now - lastReconnectAttempt > reconnectInterval) {
             lastReconnectAttempt = now;
-            Serial.println("🔄 Intentando reconectar a MQTT...");
-            setupWebSocket(); // Reinicializar WebSocket
+            Serial.println("🔄 Intentando reconectar WebSocket/MQTT...");
+            Serial.printf("   WiFi IP: %s\n", WiFi.localIP().toString().c_str());
+            Serial.printf("   WiFi RSSI: %d dBm\n", WiFi.RSSI());
+            
+            // Reinicializar WebSocket completamente
+            setupWebSocket();
         }
         return;
     }
