@@ -7,8 +7,11 @@
     "cf-typegen": "wrangler types --env-interface CloudflareBindings"
   },
   "dependencies": {
+    "@types/ws": "^8.18.1",
+    "aedes": "^0.51.3",
     "hono": "^4.9.6",
-    "mqtt": "^5.14.1"
+    "mqtt": "^5.14.1",
+    "ws": "^8.18.3"
   },
   "devDependencies": {
     "wrangler": "^4.4.0"
