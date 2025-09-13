@@ -1,0 +1,10 @@
+{
+	"dependencies": {
+		"aedes": "^0.51.3",
+		"hono": "^4.9.7",
+		"ws": "^8.18.3"
+	},
+	"devDependencies": {
+		"@types/ws": "^8.18.1"
+	}
+}

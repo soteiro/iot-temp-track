@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MQTT Broker Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .connected { background-color: #d4edda; color: #155724; }
+        .disconnected { background-color: #f8d7da; color: #721c24; }
+        .warning { background-color: #fff3cd; color: #856404; }
+        
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background-color: #0056b3; }
+        button:disabled { background-color: #6c757d; cursor: not-allowed; }
+        
+        input, select {
+            width: 100%;
+            padding: 8px;
+            margin: 5px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        
+        #messages {
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 10px;
+            background-color: #f8f9fa;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        
+        .message {
+            margin: 5px 0;
+            padding: 5px;
+            border-left: 3px solid #007bff;
+            background-color: white;
+        }
+        
+        .topic { font-weight: bold; color: #007bff; }
+        .payload { color: #28a745; }
+        .timestamp { color: #6c757d; font-size: 10px; }
+    </style>
+</head>
+<body>
+    <h1>🚀 MQTT Broker Test - IoT Temperature Tracking</h1>
+    
+    <div class="container">
+        <h2>Estado de Conexión</h2>
+        <div id="connectionStatus" class="status disconnected">
+            Desconectado
+        </div>
+        <button id="connectBtn" onclick="connectToBroker()">Conectar</button>
+        <button id="disconnectBtn" onclick="disconnectFromBroker()" disabled>Desconectar</button>
+    </div>
+
+    <div class="grid">
+        <div class="container">
+            <h3>📡 Suscripciones</h3>
+            <input type="text" id="subscriptionTopic" placeholder="temperature/+" value="temperature/+">
+            <button onclick="subscribe()">Suscribirse</button>
+            <button onclick="unsubscribe()">Desuscribirse</button>
+            
+            <h4>Suscripciones rápidas:</h4>
+            <button onclick="quickSubscribe('temperature/+')">Temperatura</button>
+            <button onclick="quickSubscribe('humidity/+')">Humedad</button>
+            <button onclick="quickSubscribe('status/+')">Estado</button>
+        </div>
+
+        <div class="container">
+            <h3>📤 Publicar Mensaje</h3>
+            <input type="text" id="publishTopic" placeholder="temperature/sensor1" value="temperature/sensor1">
+            <textarea id="publishPayload" placeholder='{"temperature": 23.5, "unit": "celsius"}' rows="3">{"temperature": 23.5, "unit": "celsius", "timestamp": ""}</textarea>
+            <div>
+                <label>
+                    <input type="checkbox" id="retainMessage"> Retener mensaje
+                </label>
+            </div>
+            <button onclick="publishMessage()">Publicar</button>
+            
+            <h4>Mensajes de prueba:</h4>
+            <button onclick="publishTestData()">Datos de sensores</button>
+            <button onclick="publishStatus()">Estado del sensor</button>
+        </div>
+    </div>
+
+    <div class="container">
+        <h3>📨 Mensajes Recibidos</h3>
+        <button onclick="clearMessages()">Limpiar</button>
+        <div id="messages"></div>
+    </div>
+
+    <div class="container">
+        <h3>📊 Estadísticas del Broker</h3>
+        <button onclick="loadStats()">Actualizar Estadísticas</button>
+        <div id="stats"></div>
+    </div>
+
+    <script>
+        let mqttClient = null;
+        
+        function connectToBroker() {
+            try {
+                const url = 'wss://backend.diego-sarq.workers.dev/mqtt';
+                mqttClient = new WebSocket(url);
+                
+                mqttClient.onopen = function(event) {
+                    document.getElementById('connectionStatus').className = 'status connected';
+                    document.getElementById('connectionStatus').textContent = 'Conectado al broker MQTT';
+                    document.getElementById('connectBtn').disabled = true;
+                    document.getElementById('disconnectBtn').disabled = false;
+                    addMessage('Sistema', 'Conectado al broker', 'info');
+                };
+                
+                mqttClient.onmessage = function(event) {
+                    try {
+                        const data = JSON.parse(event.data);
+                        handleMqttMessage(data);
+                    } catch (error) {
+                        console.error('Error parseando mensaje:', error);
+                    }
+                };
+                
+                mqttClient.onclose = function(event) {
+                    document.getElementById('connectionStatus').className = 'status disconnected';
+                    document.getElementById('connectionStatus').textContent = 'Desconectado';
+                    document.getElementById('connectBtn').disabled = false;
+                    document.getElementById('disconnectBtn').disabled = true;
+                    addMessage('Sistema', 'Desconectado del broker', 'warning');
+                };
+                
+                mqttClient.onerror = function(error) {
+                    document.getElementById('connectionStatus').className = 'status warning';
+                    document.getElementById('connectionStatus').textContent = 'Error de conexión';
+                    addMessage('Sistema', 'Error: ' + error, 'error');
+                };
+                
+            } catch (error) {
+                alert('Error conectando: ' + error.message);
+            }
+        }
+        
+        function disconnectFromBroker() {
+            if (mqttClient) {
+                mqttClient.close();
+                mqttClient = null;
+            }
+        }
+        
+        function handleMqttMessage(data) {
+            switch (data.type) {
+                case 'connack':
+                    addMessage('Sistema', `Conexión confirmada. Cliente ID: ${data.clientId}`, 'info');
+                    break;
+                case 'publish':
+                    addMessage(data.topic, data.payload, 'message');
+                    break;
+                case 'suback':
+                    addMessage('Sistema', 'Suscripción confirmada', 'info');
+                    break;
+                case 'unsuback':
+                    addMessage('Sistema', 'Desuscripción confirmada', 'info');
+                    break;
+                case 'pingresp':
+                    addMessage('Sistema', 'Pong recibido', 'info');
+                    break;
+                default:
+                    console.log('Mensaje MQTT:', data);
+            }
+        }
+        
+        function subscribe() {
+            const topic = document.getElementById('subscriptionTopic').value;
+            if (!mqttClient || !topic) return;
+            
+            const message = {
+                type: 'subscribe',
+                topic: topic,
+                messageId: Date.now(),
+                qos: 0
+            };
+            
+            mqttClient.send(JSON.stringify(message));
+            addMessage('Sistema', `Suscribiéndose a: ${topic}`, 'info');
+        }
+        
+        function unsubscribe() {
+            const topic = document.getElementById('subscriptionTopic').value;
+            if (!mqttClient || !topic) return;
+            
+            const message = {
+                type: 'unsubscribe',
+                topic: topic,
+                messageId: Date.now()
+            };
+            
+            mqttClient.send(JSON.stringify(message));
+            addMessage('Sistema', `Desuscribiéndose de: ${topic}`, 'info');
+        }
+        
+        function quickSubscribe(topic) {
+            document.getElementById('subscriptionTopic').value = topic;
+            subscribe();
+        }
+        
+        function publishMessage() {
+            const topic = document.getElementById('publishTopic').value;
+            let payload = document.getElementById('publishPayload').value;
+            const retain = document.getElementById('retainMessage').checked;
+            
+            if (!mqttClient || !topic || !payload) return;
+            
+            // Añadir timestamp si es JSON
+            try {
+                const jsonPayload = JSON.parse(payload);
+                if (jsonPayload.timestamp === "") {
+                    jsonPayload.timestamp = new Date().toISOString();
+                    payload = JSON.stringify(jsonPayload);
+                }
+            } catch (e) {
+                // No es JSON, usar como está
+            }
+            
+            const message = {
+                type: 'publish',
+                topic: topic,
+                payload: payload,
+                qos: 0,
+                retain: retain,
+                messageId: Date.now()
+            };
+            
+            mqttClient.send(JSON.stringify(message));
+            addMessage('Enviado', `${topic}: ${payload}`, 'sent');
+        }
+        
+        function publishTestData() {
+            const sensors = [1, 2, 3];
+            const sensor = sensors[Math.floor(Math.random() * sensors.length)];
+            
+            const tempData = {
+                sensorId: `sensor${sensor}`,
+                temperature: (20 + Math.random() * 15).toFixed(2),
+                unit: 'celsius',
+                timestamp: new Date().toISOString()
+            };
+            
+            const humData = {
+                sensorId: `sensor${sensor}`,
+                humidity: (40 + Math.random() * 40).toFixed(2),
+                unit: 'percent',
+                timestamp: new Date().toISOString()
+            };
+            
+            // Publicar temperatura
+            document.getElementById('publishTopic').value = `temperature/sensor${sensor}`;
+            document.getElementById('publishPayload').value = JSON.stringify(tempData);
+            publishMessage();
+            
+            // Publicar humedad después de un momento
+            setTimeout(() => {
+                document.getElementById('publishTopic').value = `humidity/sensor${sensor}`;
+                document.getElementById('publishPayload').value = JSON.stringify(humData);
+                publishMessage();
+            }, 500);
+        }
+        
+        function publishStatus() {
+            const sensor = Math.floor(Math.random() * 3) + 1;
+            const statusData = {
+                sensorId: `sensor${sensor}`,
+                status: 'online',
+                battery: Math.floor(Math.random() * 100),
+                lastSeen: new Date().toISOString()
+            };
+            
+            document.getElementById('publishTopic').value = `status/sensor${sensor}`;
+            document.getElementById('publishPayload').value = JSON.stringify(statusData);
+            document.getElementById('retainMessage').checked = true;
+            publishMessage();
+        }
+        
+        function addMessage(topic, payload, type) {
+            const messages = document.getElementById('messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message';
+            
+            const timestamp = new Date().toLocaleTimeString();
+            messageDiv.innerHTML = `
+                <div class="timestamp">${timestamp}</div>
+                <div class="topic">${topic}</div>
+                <div class="payload">${payload}</div>
+            `;
+            
+            messages.appendChild(messageDiv);
+            messages.scrollTop = messages.scrollHeight;
+        }
+        
+        function clearMessages() {
+            document.getElementById('messages').innerHTML = '';
+        }
+        
+        async function loadStats() {
+            try {
+                const response = await fetch('https://backend.diego-sarq.workers.dev/broker/stats');
+                const stats = await response.json();
+                
+                document.getElementById('stats').innerHTML = `
+                    <h4>Estadísticas del Broker:</h4>
+                    <ul>
+                        <li><strong>Clientes conectados:</strong> ${stats.connectedClients}</li>
+                        <li><strong>Broker ID:</strong> ${stats.brokerId}</li>
+                        <li><strong>Tiempo activo:</strong> ${Math.floor(stats.uptime / 1000)} segundos</li>
+                        <li><strong>Mensajes totales:</strong> ${stats.totalMessages}</li>
+                        <li><strong>Mensajes retenidos:</strong> ${stats.retainedMessages}</li>
+                        <li><strong>Clientes:</strong> [${stats.clients.join(', ')}]</li>
+                        <li><strong>Tópicos retenidos:</strong> [${stats.retainedTopics.join(', ')}]</li>
+                    </ul>
+                `;
+            } catch (error) {
+                document.getElementById('stats').innerHTML = `<p>Error cargando estadísticas: ${error.message}</p>`;
+            }
+        }
+        
+        // Cargar estadísticas al inicio
+        window.onload = function() {
+            loadStats();
+        };
+    </script>
+</body>
+</html>
