@@ -1,18 +1,18 @@
 # Firmware IoT Temperature Tracker - ESP32
 
-Este firmware está diseñado para un microcontrolador ESP32 que funciona como un monitor IoT de temperatura y humedad. Lee datos del sensor DHT22 y los envía a un broker MQTT personalizado a través de WebSockets seguros (WSS) para su procesamiento y visualización en tiempo real.
+Este firmware está diseñado para un microcontrolador ESP32 que funciona como un monitor IoT de temperatura y humedad. Lee datos del sensor DHT22 y los envía a un broker MQTT tradicional para su procesamiento y visualización en tiempo real.
 
 ## Características
 
 - **Sensor DHT22**: Lectura precisa de temperatura (-40°C a 80°C) y humedad (0-100% RH)
 - **Conectividad WiFi**: Conexión automática con reconexión inteligente
-- **WebSocket Seguro (WSS)**: Comunicación en tiempo real con broker MQTT personalizado
-- **Broker personalizado**: Desplegado en Cloudflare Workers para máxima disponibilidad
-- **Sistema de alertas**: Notificaciones automáticas por umbrales de temperatura y humedad
+- **Protocolo MQTT**: Comunicación estándar con broker MQTT (PubSubClient)
+- **Índice de calor**: Cálculo automático del heat index para mayor información
 - **Cliente ID único**: Generado automáticamente basado en la MAC del dispositivo
 - **Diagnósticos**: Monitoreo completo de estado y calidad de señal WiFi
 - **Configuración centralizada**: Todo configurable desde `include/config.h`
 - **Desarrollo moderno**: Framework Arduino con PlatformIO
+- **Manejo de errores**: Valores por defecto si el sensor falla
 
 ## Requisitos de Hardware
 
@@ -31,6 +31,8 @@ GPIO4   -----> DATA (con resistor pull-up 10kΩ a VCC)
 GND     -----> GND
 ```
 
+**Nota**: El pin GPIO se define en `config.h` con la constante `DHTPIN`.
+
 ## Requisitos de Software
 
 - **[Visual Studio Code](https://code.visualstudio.com/)** - Editor principal
@@ -43,16 +45,15 @@ El archivo `platformio.ini` incluye todas las librerías necesarias:
 
 - **`adafruit/DHT sensor library@^1.4.4`** - Control del sensor DHT22
 - **`adafruit/Adafruit Unified Sensor@^1.1.14`** - Abstracción de sensores
-- **`links2004/WebSockets@^2.4.0`** - Cliente WebSocket para ESP32
+- **`knolleary/PubSubClient@^2.8`** - Cliente MQTT estándar
 - **`bblanchon/ArduinoJson@^6.21.5`** - Manejo de JSON
-- **`PubSubClient`** - Protocolo MQTT (usado internamente)
 - **WiFi** (incluida en ESP32 Arduino Core)
 
 ## Configuración
 
-Toda la configuración se centraliza en `include/config.h`. Este archivo contiene credenciales WiFi, configuración del broker, umbrales de alerta y parámetros del sistema.
+Toda la configuración se centraliza en `include/config.h`. Este archivo contiene credenciales WiFi, configuración del broker MQTT, parámetros del sensor y configuración del sistema.
 
-### 1. Configurar credenciales WiFi y broker
+### 1. Configurar credenciales WiFi y broker MQTT
 
 Edita el archivo `include/config.h` con tus datos:
 
@@ -64,37 +65,48 @@ Edita el archivo `include/config.h` con tus datos:
 // =============================================================================
 // CONFIGURACIÓN WIFI
 // =============================================================================
-const char* ssid = "TU_RED_WIFI";           // Nombre de tu red WiFi
-const char* password = "TU_PASSWORD_WIFI";   // Contraseña de WiFi
+#define WIFI_SSID "TU_RED_WIFI"           // Nombre de tu red WiFi
+#define WIFI_PASSWORD "TU_PASSWORD_WIFI"   // Contraseña de WiFi
 
 // =============================================================================
-// CONFIGURACIÓN MQTT BROKER (WebSocket)
+// CONFIGURACIÓN MQTT BROKER
 // =============================================================================
-const char* mqtt_broker_host = "backend.diego-sarq.workers.dev";  // Tu broker personalizado
-const int mqtt_broker_port = 443;            // Puerto HTTPS
-const char* mqtt_path = "/mqtt";              // Ruta del WebSocket
-const char* mqtt_protocol = "wss";           // WebSocket Secure
+#define MQTT_BROKER "tu-broker-mqtt.com"   // Dirección del broker MQTT
+#define MQTT_PORT 1883                     // Puerto estándar MQTT (1883 o 8883 para SSL)
+#define MQTT_USER "usuario"                // Usuario MQTT (opcional)
+#define MQTT_PASSWORD "password"           // Contraseña MQTT (opcional)
 
 // =============================================================================
-// CONFIGURACIÓN DE UMBRALES DE ALERTA
+// CONFIGURACIÓN DEL SENSOR DHT22
 // =============================================================================
-#define TEMP_ALERT_HIGH 30.0               // Temperatura alta (°C)
-#define TEMP_ALERT_LOW 10.0                // Temperatura baja (°C)
-#define HUMIDITY_ALERT_HIGH 80.0           // Humedad alta (%)
-#define HUMIDITY_ALERT_LOW 30.0            // Humedad baja (%)
+#define DHTPIN 4                          // Pin GPIO donde está conectado el DHT22
+#define DHTTYPE DHT22                     // Tipo de sensor (DHT22/AM2302)
+
+// =============================================================================
+// CONFIGURACIÓN DE TOPICS MQTT
+// =============================================================================
+#define TOPIC_BASE "5a728254-5316-45c6-bf3c-de194f1afa53"  // Topic base único
+#define TOPIC_SENSOR_DATA TOPIC_BASE "/sensor_data"         // Topic para datos del sensor
+#define TOPIC_COMMANDS TOPIC_BASE "/commands"               // Topic para comandos remotos
+
+// =============================================================================
+// CONFIGURACIÓN DEL SISTEMA
+// =============================================================================
+#define PUBLISH_INTERVAL 5000             // Intervalo de publicación en ms (5 segundos)
+#define RECONNECT_DELAY 10000             // Tiempo de espera para reconexión MQTT (10 seg)
 
 #endif
 ```
 
-### 2. Broker MQTT Personalizado
+### 2. Broker MQTT
 
-Este proyecto utiliza un broker MQTT personalizado desplegado en **Cloudflare Workers** que:
+Este firmware está configurado para trabajar con **cualquier broker MQTT estándar**:
 
-- ✅ Acepta conexiones WebSocket seguras (WSS)
-- ✅ Procesa mensajes MQTT en tiempo real
-- ✅ Proporciona alta disponibilidad global
-- ✅ No requiere autenticación (configurable)
-- ✅ Soporta retain messages y suscripciones
+- ✅ **Mosquitto** (broker open source)
+- ✅ **HiveMQ** (broker comercial)
+- ✅ **AWS IoT Core** (con adaptación para SSL)
+- ✅ **Google Cloud IoT** (con configuración adicional)
+- ✅ **Brokers locales** (Raspberry Pi, Docker, etc.)
 
 ## Instalación y Uso
 
@@ -111,8 +123,9 @@ code .
 
 ### 2. Configuración
 
-1. **Editar credenciales**: Modifica `include/config.h` con tu WiFi y configuración del broker
+1. **Editar credenciales**: Modifica `include/config.h` con tu WiFi y configuración del broker MQTT
 2. **Verificar hardware**: Conecta el DHT22 según el esquema de conexiones
+3. **Configurar broker**: Asegúrate de que tu broker MQTT esté accesible
 
 ### 3. Desarrollo con PlatformIO
 
@@ -142,37 +155,77 @@ pio run --target clean
 
 El firmware envía información detallada por puerto serie (115200 baudios):
 
-- ✅ Estado de conexión WiFi y calidad de señal
-- ✅ Información del broker WebSocket
-- ✅ Lecturas del sensor en tiempo real
-- ✅ Mensajes de alerta por umbrales
-- ✅ Eventos de conexión/desconexión
+```text
+=== ESP32 IoT Temperature Tracker ===
+Starting system initialization...
+Connecting to WiFi: TU_RED_WIFI
+....
+WiFi connected successfully!
+IP address: 192.168.1.100
+Signal strength (RSSI): -45 dBm
+Initializing DHT sensor...
+DHT sensor initialized
+Connecting to MQTT broker: tu-broker-mqtt.com
+System initialization complete!
+================================
+Attempting MQTT connection...Client ID: ESP32-A1B2C3D4E5F6 connected!
+Connected to MQTT broker
+Subscribed to topics
+Reading sensor data...
+Temperature: 24.5 °C
+Humidity: 65.2 %
+Heat Index: 25.1 °C
+Publishing data to MQTT...
+JSON payload: {"device_id":"ESP32-A1B2C3D4E5F6","timestamp":15432,"temperature":24.5,"humidity":65.2,"heat_index":25.1,"wifi_rssi":-45}
+✓ JSON data published successfully!
+-----
+```
 
 ## Arquitectura del Sistema
 
 ### Flujo de datos
 
 ```text
-[DHT22] → [ESP32] → [WiFi] → [WebSocket WSS] → [Cloudflare Workers] → [MQTT Broker]
+[DHT22] → [ESP32] → [WiFi] → [MQTT Broker] → [Aplicaciones/Dashboard]
 ```
 
 ### Tópicos MQTT utilizados
 
 El sistema organiza los datos en tópicos específicos:
 
-- **`temperature/{clientId}`** - Lecturas de temperatura en °C
-- **`humidity/{clientId}`** - Lecturas de humedad en %
-- **`status/{clientId}`** - Estado del dispositivo (online/offline)
-- **`alerts/{clientId}`** - Alertas por umbrales excedidos
-- **`sensors/{clientId}`** - Información completa del sensor
+- **`{TOPIC_BASE}/sensor_data`** - Datos completos del sensor en formato JSON
+- **`{TOPIC_BASE}/commands`** - Comandos remotos para el dispositivo
 
-### Funcionalidades avanzadas
+#### Formato de datos JSON
 
-- **Reconexión automática**: Si se pierde WiFi o WebSocket, reintenta cada 30 segundos
+```json
+{
+  "device_id": "ESP32-A1B2C3D4E5F6",
+  "timestamp": 15432,
+  "temperature": 24.5,
+  "humidity": 65.2,
+  "heat_index": 25.1,
+  "wifi_rssi": -45
+}
+```
+
+#### Formato de comandos
+
+```json
+{
+  "action": "restart",
+  "parameters": {}
+}
+```
+
+### Funcionalidades del sistema
+
+- **Reconexión automática**: Si se pierde WiFi o MQTT, reintenta automáticamente
 - **Cliente ID único**: Basado en MAC address para identificación unívoca
-- **Umbrales configurables**: Alertas automáticas por temperatura/humedad
-- **Mensajes retained**: El estado se mantiene en el broker
-- **Control remoto**: Posibilidad de recibir comandos via `control/{clientId}`
+- **Sensor resiliente**: Usa valores por defecto si el DHT22 falla
+- **Índice de calor**: Cálculo automático para mayor información meteorológica
+- **Monitoreo WiFi**: Incluye calidad de señal en los datos
+- **Control remoto**: Preparado para recibir comandos via MQTT
 
 ## Estructura del Proyecto
 
@@ -189,6 +242,31 @@ firmware/
 └── README.md                 # 📖 Este archivo
 ```
 
+## Funciones Principales
+
+### `setup_wifi()`
+- Conecta el ESP32 a la red WiFi configurada
+- Muestra información de conexión y calidad de señal
+- Maneja errores de conexión
+
+### `reconnect()`
+- Establece conexión con el broker MQTT
+- Genera cliente ID único basado en MAC
+- Se suscribe a topics de comandos
+- Implementa retry automático con delay
+
+### `callback()`
+- Procesa mensajes recibidos via MQTT
+- Maneja comandos remotos en formato JSON
+- Extensible para futuras funcionalidades
+
+### `loop()` principal
+- Lee datos del sensor DHT22 cada 5 segundos
+- Calcula índice de calor automáticamente
+- Publica datos en formato JSON al broker MQTT
+- Maneja errores de sensor con valores por defecto
+- Mantiene conexión MQTT activa
+
 ## Solución de Problemas
 
 ### Problemas comunes
@@ -196,33 +274,58 @@ firmware/
 #### Error de conexión WiFi
 
 ```text
-Solución: Verificar SSID y password en config.h
-         Comprobar que la red es 2.4GHz (ESP32 no soporta 5GHz)
+Síntoma: "Connecting to WiFi" se queda cargando
+Solución: 
+- Verificar SSID y password en config.h
+- Comprobar que la red es 2.4GHz (ESP32 no soporta 5GHz)
+- Verificar que la red esté disponible
 ```
 
-#### WebSocket no conecta
+#### Error de conexión MQTT
 
 ```text
-Solución: Verificar que mqtt_broker_host esté accesible
-         Comprobar certificados SSL/TLS
-         Revisar firewall/proxy corporativo
+Síntoma: "failed, rc=X retrying in 10 seconds..."
+Solución:
+- Verificar que MQTT_BROKER sea accesible
+- Comprobar puerto (1883 para no-SSL, 8883 para SSL)
+- Verificar credenciales si el broker las requiere
+- Revisar firewall/router
 ```
 
 #### Sensor DHT22 da lecturas erróneas
 
 ```text
-Solución: Verificar conexiones (VCC, GND, DATA)
-         Añadir resistor pull-up 10kΩ en DATA
-         Comprobar que el sensor no esté defectuoso
+Síntoma: "ERROR: Failed to read from DHT sensor!"
+Solución:
+- Verificar conexiones (VCC=3.3V, GND, DATA=GPIO4)
+- Añadir resistor pull-up 10kΩ entre DATA y VCC
+- Verificar que el sensor no esté defectuoso
+- El firmware usará valores por defecto (temp=25°C, hum=60%)
 ```
 
 #### Errores de compilación
 
 ```text
-Solución: Actualizar PlatformIO Core: pio upgrade
-         Limpiar build: pio run --target clean
-         Reinstalar dependencias: pio lib install
+Solución:
+- Actualizar PlatformIO Core: pio upgrade
+- Limpiar build: pio run --target clean
+- Verificar que config.h existe y está bien formateado
+- Reinstalar dependencias: pio lib install
 ```
+
+### Códigos de error MQTT
+
+| Código | Descripción | Solución |
+|--------|-------------|----------|
+| -4 | Connection timeout | Verificar red/broker |
+| -3 | Connection lost | Verificar estabilidad red |
+| -2 | Connect failed | Verificar broker/puerto |
+| -1 | Disconnected | Reconexión automática |
+| 0 | Connected | Todo OK |
+| 1 | Bad protocol | Verificar versión MQTT |
+| 2 | Bad client ID | Cambiar cliente ID |
+| 4 | Bad credentials | Verificar user/password |
+| 5 | Unauthorized | Verificar permisos |
 
 ### Debugging avanzado
 
@@ -232,7 +335,7 @@ Para debugging más detallado, habilita logs adicionales en `platformio.ini`:
 build_flags = 
     -DCORE_DEBUG_LEVEL=5        ; Máximo nivel de debug
     -DDEBUG_ESP_WIFI            ; Debug WiFi
-    -DDEBUG_ESP_HTTP_CLIENT     ; Debug HTTP/WebSocket
+    -DDEBUG_ESP_HTTP_CLIENT     ; Debug conexiones
 ```
 
 ## Personalización
@@ -243,25 +346,56 @@ Edita `config.h`:
 
 ```cpp
 #define PUBLISH_INTERVAL 10000    // Publicar cada 10 segundos
-#define DHT_READ_INTERVAL 5000    // Leer DHT cada 5 segundos
+#define RECONNECT_DELAY 5000      // Reintentar conexión cada 5 segundos
 ```
 
 ### Añadir nuevos sensores
 
 1. Incluir librería del sensor en `platformio.ini`
 2. Añadir configuración en `config.h`
-3. Implementar lectura en `src/main.cpp`
-4. Crear nuevos tópicos MQTT
+3. Implementar lectura en el `loop()` de `main.cpp`
+4. Añadir campos al JSON de datos
 
-### Configurar alertas personalizadas
+### Configurar SSL/TLS
 
-Modifica los umbrales en `config.h`:
+Para conexiones seguras, modifica `config.h`:
 
 ```cpp
-#define TEMP_ALERT_HIGH 25.0      // Personalizar según necesidad
-#define TEMP_ALERT_LOW 15.0       
-#define HUMIDITY_ALERT_HIGH 70.0  
-#define HUMIDITY_ALERT_LOW 40.0   
+#define MQTT_PORT 8883                    // Puerto SSL
+```
+
+Y añade configuración SSL en `main.cpp`:
+
+```cpp
+#include <WiFiClientSecure.h>
+WiFiClientSecure espClient;  // En lugar de WiFiClient
+```
+
+### Añadir comandos remotos
+
+Expande la función `callback()` para manejar más comandos:
+
+```cpp
+void callback(char* topic, byte* payload, unsigned int length){
+    // ... código existente ...
+    
+    if (String(topic).endsWith("/commands")) {
+        StaticJsonDocument<200> cmdDoc;
+        DeserializationError error = deserializeJson(cmdDoc, message);
+        
+        if (!error && cmdDoc.containsKey("action")) {
+            String action = cmdDoc["action"];
+            
+            if (action == "restart") {
+                ESP.restart();
+            } else if (action == "calibrate") {
+                // Implementar calibración
+            } else if (action == "change_interval") {
+                // Cambiar intervalo dinámicamente
+            }
+        }
+    }
+}
 ```
 
 ## Contribución
@@ -272,6 +406,16 @@ Modifica los umbrales en `config.h`:
 4. **Push** al branch: `git push origin feature/nueva-funcionalidad`
 5. **Crear Pull Request**
 
+## Roadmap
+
+- [ ] Soporte para múltiples sensores
+- [ ] Configuración via web portal
+- [ ] OTA (Over-The-Air) updates
+- [ ] Integración con HomeAssistant
+- [ ] Modo deep sleep para ahorro energético
+- [ ] Almacenamiento local en SD
+- [ ] Display OLED para datos locales
+
 ## Licencia
 
 Este proyecto está bajo la licencia MIT. Ver archivo `LICENSE` para más detalles.
@@ -281,9 +425,13 @@ Este proyecto está bajo la licencia MIT. Ver archivo `LICENSE` para más detall
 - **DHT22**: Sensor de temperatura y humedad de Adafruit
 - **ESP32**: Microcontrolador de Espressif Systems
 - **PlatformIO**: Plataforma de desarrollo IoT
-- **WebSockets**: Comunicación en tiempo real
-- **Cloudflare Workers**: Infraestructura de broker MQTT
+- **PubSubClient**: Librería MQTT para Arduino
+- **ArduinoJson**: Manejo eficiente de JSON
 
 ---
 
 Desarrollado con ❤️ para IoT
+
+**Última actualización**: Septiembre 2025  
+**Versión del firmware**: 1.0.0  
+**Compatibilidad**: ESP32 Arduino Core 2.x+
